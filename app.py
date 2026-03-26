@@ -2,8 +2,12 @@ import streamlit as st
 import cv2
 import numpy as np
 import time
-import pygame
 import os
+try:
+    import pygame
+    pygame_available = True
+except ImportError:
+    pygame_available = False
 
 # 1. Sound File Setup
 ALARM_FILE = "alarm.wav" 

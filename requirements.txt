@@ -1,4 +1,3 @@
 echo streamlit > requirements.txt
 echo opencv-python-headless >> requirements.txt
 echo numpy >> requirements.txt
-echo pygame >> requirements.txt
