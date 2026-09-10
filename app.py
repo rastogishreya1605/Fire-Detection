@@ -1,111 +1,152 @@
 import streamlit as st
 import cv2
 import numpy as np
-import pygame
-import time
-import os
+import av
 
-# Alarm sound
-ALARM_FILE = "alarm.wav"
+from streamlit_webrtc import webrtc_streamer, VideoProcessorBase
 
-# Start pygame audio
-pygame.mixer.init()
 
-# Streamlit page settings
+# ---------------------------------------------------------
+# App settings
+# ---------------------------------------------------------
+
 st.set_page_config(
     page_title="Fire Detection AI",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_icon="🔥",
+    layout="wide"
 )
 
-# Remove Streamlit default spacing and sidebar
-st.markdown(
-    """
-    <style>
-        [data-testid="stHeader"],
-        [data-testid="stFooter"],
-        [data-testid="stSidebar"] {
-            display: none;
-        }
 
-        .block-container {
-            padding: 0;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
+# ---------------------------------------------------------
+# App heading
+# ---------------------------------------------------------
+
+st.title("🔥 Fire Detection AI")
+
+st.write(
+    "This application uses computer vision to detect "
+    "possible fire in real time."
 )
 
-# Camera display
-camera_view = st.image([])
+st.info(
+    "Click the START button below and allow camera access "
+    "when your browser asks for permission."
+)
 
 
-# Open webcam
-camera = cv2.VideoCapture(0)
+# ---------------------------------------------------------
+# Fire detection
+# ---------------------------------------------------------
 
-while True:
-    success, frame = camera.read()
+class FireDetector(VideoProcessorBase):
 
-    # Camera frame ko screen ke according resize karna
-    frame = cv2.resize(frame, (1280, 720))
+    def recv(self, frame):
 
-    # OpenCV BGR mein image deta hai, Streamlit ke liye RGB chahiye
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Get the camera image
+        image = frame.to_ndarray(format="bgr24")
 
-    # HSV image fire color identify karne mein useful hai
-    hsv_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        # Make the image smaller so detection is faster
+        image = cv2.resize(image, (960, 540))
 
-    # Fire ke liye approximate color range
-    lower_fire = np.array([0, 160, 180])
-    upper_fire = np.array([35, 255, 255])
-    fire_mask = cv2.inRange(
-        hsv_frame,
-        lower_fire,
-        upper_fire
-    )
+        # Convert image into HSV format
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Noise reduce
-    fire_mask = cv2.medianBlur(fire_mask, 9)
-    fire_pixels = cv2.countNonZero(fire_mask)
-    if fire_pixels > 8000:
+        # These values describe common fire colors
+        lower_fire = np.array([0, 120, 120])
+        upper_fire = np.array([50, 255, 255])
 
-        # Screen par red border
-        cv2.rectangle(
-            rgb_frame,
-            (0, 0),
-            (1279, 719),
-            (255, 0, 0),
-            40
+        # Find pixels that look like fire
+        fire_mask = cv2.inRange(
+            hsv,
+            lower_fire,
+            upper_fire
         )
 
-        # Warning message
+        # Remove small noise
+        fire_mask = cv2.medianBlur(
+            fire_mask,
+            9
+        )
+
+        # Count possible fire pixels
+        fire_pixels = cv2.countNonZero(
+            fire_mask
+        )
+
+        # -------------------------------------------------
+        # Show result
+        # -------------------------------------------------
+
+        if fire_pixels > 1500:
+
+            cv2.rectangle(
+                image,
+                (0, 0),
+                (959, 539),
+                (0, 0, 255),
+                15
+            )
+
+            cv2.putText(
+                image,
+                "FIRE DETECTED!",
+                (40, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                2,
+                (0, 0, 255),
+                5
+            )
+
+        else:
+
+            cv2.putText(
+                image,
+                "NO FIRE DETECTED",
+                (40, 80),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1.4,
+                (0, 255, 0),
+                4
+            )
+
+        # Show number of detected fire pixels
         cv2.putText(
-            rgb_frame,
-            "FIRE DETECTED!",
-            (100, 400),
+            image,
+            f"Fire pixels: {fire_pixels}",
+            (40, 125),
             cv2.FONT_HERSHEY_SIMPLEX,
-            4,(255, 0, 0), 12
+            0.8,
+            (255, 255, 255),
+            2
         )
 
-        # Alarm start
-        if not pygame.mixer.music.get_busy():
-            if os.path.exists(ALARM_FILE):
-                pygame.mixer.music.load(ALARM_FILE)
-                pygame.mixer.music.play(-1)
+        # Send the processed camera image back
+        return av.VideoFrame.from_ndarray(
+            image,
+            format="bgr24"
+        )
 
-    else:
-        # Fire detect na hone par alarm stop
-        if pygame.mixer.music.get_busy():
-            pygame.mixer.music.stop()
 
-    # Camera frame display
-    camera_view.image(
-        rgb_frame,
-        width="stretch"
-    )
-    time.sleep(0.01)
+# ---------------------------------------------------------
+# Start camera
+# ---------------------------------------------------------
 
-# Camera close
-camera.release()
-pygame.mixer.quit()
+webrtc_streamer(
+    key="fire-camera",
+    video_processor_factory=FireDetector,
+    media_stream_constraints={
+        "video": True,
+        "audio": False
+    },
+    async_processing=True
+)
 
+
+# ---------------------------------------------------------
+# Small note
+# ---------------------------------------------------------
+
+st.caption(
+    "Note: This is a computer-vision based demonstration "
+    "and should not be used as a professional fire alarm system."
+)
